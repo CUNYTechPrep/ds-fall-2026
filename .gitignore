@@ -99,4 +99,4 @@ dmypy.json
 .ds-dev-fall-2025-venv/
 
 # Application logs
-/logs
+/logsWeek-01-Pandas/data/joined.csv
