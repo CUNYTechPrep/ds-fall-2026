@@ -100,3 +100,4 @@ dmypy.json
 
 # Application logs
 /logsWeek-01-Pandas/data/joined.csv
+Week-01-Pandas/data/joined.csv
