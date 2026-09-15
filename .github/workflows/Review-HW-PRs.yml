@@ -21,17 +21,33 @@
 #     exercise/
 #       {unique_id}_week_{NN}_exercise.ipynb  <- student submissions go here,
 #                                                 never at the week root.
+#                                                 (that's the name we ASK for;
+#                                                 what's actually enforced is
+#                                                 looser -- see NAMING RULES)
 # A week with no homework assigned just has no exercise/ folder (and maybe no
 # template either) -- that's expected, not an error, and can change over time
 # as the semester's content firms up.
 #
-# NAMING RULES:
-#   - Submission: {unique_id}_week_{NN}_exercise.ipynb, unique_id must NOT be
-#     bare initials (2-4 letters only) -- this repo is shared across sections,
-#     and bare initials collided for real over the summer. Use your full name
-#     (Firstname_Lastname) or an identifier that includes a digit (student ID,
-#     etc). Case-insensitive, tolerates a trailing "_copy"/" copy" (Jupyter's
-#     duplicate-file artifact), tolerates "Week1" as well as "Week_1".
+# NAMING RULES -- we ASK for {unique_id}_week_{NN}_exercise.ipynb, but what's
+# ENFORCED is deliberately looser than that. Two separate things:
+#   - Submission, enforced: the filename must carry (a) a unique_id that can't
+#     collide across sections -- a two-token name like Firstname_Lastname, or
+#     anything containing a digit -- and (b) a week number. That's it. Bare
+#     initials are still rejected (they collided for real over the summer), and
+#     so is a single jammed-together token like "abigailvincent". Separators can
+#     be -, _ or a space. Case-insensitive. Anything after the week number is
+#     ignored entirely, so _exercise, _hw, _HW, _Homework, _excercise, a trailing
+#     "_copy" from Jupyter, or nothing at all all pass.
+#   - Why so loose: a Week 1 audit of 49 flagged PRs found that ~26 of them were
+#     rejected for punctuation or for the word after the week number, while
+#     being completely unambiguous submissions. Worse, both patterns traced back
+#     to us -- the template students copy is hyphen-named, and the instructions
+#     doc's own worked example ended in "_hw". Rejecting those taught nothing.
+#     The two rules that carry real meaning (no collisions, week is knowable)
+#     are the two that stayed.
+#   - Files that aren't .ipynb at all are never submissions and get their own
+#     message. Most common by far: a `joined.csv` the Week 1 exercise writes
+#     when you run it, committed by accident because `data/` isn't gitignored.
 #   - Template: filename must start with Exercise-DONT-EDIT-MAKE-COPY, case-
 #     insensitive and separator-agnostic (-, _, a space, or nothing between the
 #     words all match), and lives directly in the week's own folder, not inside
@@ -65,17 +81,24 @@
 # over unchanged from the summer bot. See that repo's workflow file and
 # project notes for the reasoning if any of it looks unmotivated here.
 #
-# KNOWN FAILURE MODE TO WATCH FOR: the summer repo hit a case where
-# GITHUB_TOKEN's own merge call returned 403 "Resource not accessible by
-# integration" on PRs that were otherwise completely clean to merge, while a
-# real collaborator account could merge the identical PR by hand with zero
-# issues. Root cause was never fully pinned down (most likely a branch
-# protection/ruleset push restriction excluding the Actions app), and the
-# workaround was routing just the merge call through a PAT via getOctokit().
-# Don't pre-emptively wire that up here -- it adds a secret dependency for a
-# problem this repo may not even have -- but if merges start silently
-# 403ing here too, that's the playbook, not a new bug to re-diagnose from
-# scratch.
+# !! REPO SETTING THIS FILE DEPENDS ON: Settings -> General -> Pull Requests ->
+# "Allow auto-merge" must stay CHECKED on this repo.
+#
+# With it unchecked, every pulls.merge() call from this workflow came back
+# 403 "Resource not accessible by integration" on PRs that were completely
+# clean, while a human merged those same PRs by hand with no trouble. Checking
+# the box fixed it immediately, with no code change: PR #67 merged itself on
+# the very next run, by github-actions[bot].
+#
+# That is NOT what the box is documented to do -- GitHub scopes it to the
+# "Enable auto-merge" queue, which this workflow never calls. The mechanism is
+# genuinely unexplained, and the summer repo (2026-ds-summer-prep) auto-merges
+# fine WITHOUT the box checked, so this isn't a general rule either. It is
+# simply the observed difference between this bot working and not working here.
+#
+# So if merges start 403ing again: CHECK THAT BOX FIRST. Do not reach for a
+# PAT + getOctokit() workaround -- that was designed twice for this exact
+# symptom, in two different repos, and was never actually needed either time.
 #
 # BEFORE TRUSTING THIS WITH REAL PRs: run it once by hand with "Dry run"
 # checked (Actions tab -> this workflow -> Run workflow). It logs exactly
@@ -121,8 +144,30 @@ jobs:
             // (student ID, etc). Learned the hard way over the summer that bare
             // initials collide for real once you're sharing a repo across
             // sections.
+            //
+            // LOOSENED after auditing the real Week 1 backlog. Two things the
+            // old pattern rejected turned out to be harmless, and both were
+            // arguably our fault:
+            //   - separators. The old rule demanded underscores, but the
+            //     template students physically copy is named
+            //     "Exercise-DONT-EDIT-MAKE-COPY.ipynb" -- hyphens. 12 students
+            //     copied that style into their own filename. So -, _ and space
+            //     are all accepted anywhere a separator goes.
+            //   - the trailing "_exercise" token. The old instructions doc's own
+            //     worked example ended in "_hw", so 13 students wrote _hw, _HW,
+            //     _Homework, or nothing. Nothing after the week number is read
+            //     at all any more, which also makes the "excercise"/"Exercises"
+            //     misspellings moot without maintaining a spelling list.
+            // What the name still has to carry is exactly what the rule is FOR:
+            //   - a unique_id that can't collide across sections -- either a
+            //     two-token name or something containing a digit. Bare initials
+            //     stay rejected (they collided for real over the summer), and so
+            //     does a single jammed-together token like "abigailvincent".
+            //   - a week number, so the submission can be placed.
+            // Location and week/folder agreement are checked separately below
+            // and were not loosened.
             const NAME_RE =
-              /^(?:(?:[A-Za-z]+_[A-Za-z]+)|(?:[A-Za-z]+[A-Za-z0-9]*_[A-Za-z0-9]*[0-9][A-Za-z0-9]*))_week_?(\d+)_exercise(?:[ _]copy)?\.ipynb$/i;
+              /^(?:(?:[A-Za-z]+[ _-][A-Za-z]+)|(?:[A-Za-z][A-Za-z0-9]*[ _-][A-Za-z0-9]*[0-9][A-Za-z0-9]*))[ _-]week[ _-]?(\d+)(?:[ _-].*)?\.ipynb$/i;
             // Matches "Week-{NN}-{anything}/exercise/{filename}" and captures the
             // week number from the FOLDER, so it can be cross-checked against the
             // week number embedded in the filename itself (NAME_RE's capture
@@ -178,6 +223,23 @@ jobs:
               const basename = filename.split('/').pop();
               if (reason === 'template') {
                 return `\`${filename}\` is the template itself, don't edit it, make your own copy inside that week's \`exercise/\` folder instead`;
+              }
+              // Anything that isn't a notebook was never a submission attempt,
+              // so say that plainly instead of talking about naming. Sits ahead
+              // of the leftover-copy branch on purpose: a PR carrying a good
+              // notebook AND a stray data file used to be told the data file
+              // "looks like a leftover copy", which is wrong -- it's a copy of
+              // nothing. 17 of the Week 1 PRs tripped this, almost all of them
+              // a `joined.csv` the exercise itself writes when you run it, and
+              // that folder isn't gitignored. Student error only in the sense
+              // that nobody told them clearly.
+              if (!/\.ipynb$/i.test(basename)) {
+                return (
+                  `\`${filename}\` isn't homework -- this PR should only contain your one exercise notebook. ` +
+                  `This file looks like something the notebook wrote when you ran it. Remove it with ` +
+                  `\`git rm --cached "${filename}"\`, then commit and push. It'll stay on your computer, ` +
+                  `it just won't be in the PR`
+                );
               }
               // A PR that already carries exactly one good submission plus a
               // file we don't recognize is almost always a leftover copy from
@@ -256,11 +318,37 @@ jobs:
             // execution_count, and metadata, which change just from running a
             // notebook regardless of whether any answer was actually written).
             // Returns null if the file is missing, unreadable, or not valid JSON.
+            //
+            // mediaType raw is load-bearing, not a style choice. The default
+            // JSON response only carries base64 `content` for files up to 1 MB
+            // -- past that it comes back with an empty content field and NO
+            // error, so the old code silently returned null. A notebook with
+            // saved plot outputs clears 1 MB easily (we hit real 1.2 MB and
+            // 9.6 MB submissions), and those PRs then parked forever in
+            // 'unverified': no label, no comment, no merge, nothing telling the
+            // student anything was wrong, and nothing showing up in the sweep
+            // summary either. Raw handles up to 100 MB, which is also GitHub's
+            // own per-file push limit, so nothing that can be in the repo is
+            // too big for this path.
             async function getNotebookSource(path, ref) {
               try {
-                const res = await github.rest.repos.getContent({ owner, repo, path, ref });
-                if (Array.isArray(res.data) || !res.data.content) return null;
-                const text = Buffer.from(res.data.content, 'base64').toString('utf-8');
+                const res = await github.rest.repos.getContent({
+                  owner,
+                  repo,
+                  path,
+                  ref,
+                  mediaType: { format: 'raw' },
+                });
+                // With format raw, octokit hands back the file as a string.
+                // Keep the base64 branch as a fallback in case a proxy or a
+                // future octokit ignores the media type and returns JSON.
+                const text =
+                  typeof res.data === 'string'
+                    ? res.data
+                    : Array.isArray(res.data) || !res.data.content
+                      ? null
+                      : Buffer.from(res.data.content, 'base64').toString('utf-8');
+                if (text === null) return null;
                 const nb = JSON.parse(text);
                 return (nb.cells || [])
                   .map((c) => (Array.isArray(c.source) ? c.source.join('') : c.source || ''))
