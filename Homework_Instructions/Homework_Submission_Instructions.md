@@ -32,16 +32,46 @@ This is a coding assignment that you usually start in class. It is located in th
 
 #### Instructions
 
+A bot reviews every homework PR automatically. Two things decide whether it
+merges you: **your filename identifies you and the week**, and **your PR
+contains nothing but your notebook.** Steps 2, 4 and 5 are where essentially
+every rejection comes from.
+
 1. **Make a copy** of `Exercise-DONT-EDIT-MAKE-COPY.ipynb`.
-   - Do **not** edit or submit the original template.Work only on your copy.
-2. **Rename your copy** using a unique filename that identifies you and the week.
-   - Your filename must include your full name, CUNY/student ID, or another stable unique identifier. **Do not use initials alone.**
-   - Good examples:
-     - `faizan_khan_week_3_hw.ipynb`
+   - Do **not** edit or submit the original template. Work only on your copy.
+2. **Rename your copy.** Aim for this shape:
+
+   ```
+   Firstname_Lastname_week_{NN}_exercise.ipynb
+   ```
+
+   Only two parts are actually enforced, so don't lose sleep over punctuation:
+
+   - **Who you are.** Use `Firstname_Lastname`, or any identifier with a digit in it (e.g. a student number — but not your real CUNY ID, this repo is public). **Initials alone are rejected** — we share this repo across every section and initials collide for real. A single run-together word like `janedoe` is also rejected; separate your names.
+   - **Which week.** A week number has to appear, and it has to match the week folder you put the file in.
+   - Everything else is flexible: `-`, `_` or a space as separators, any capitalization, and whatever you write after the week number (`_exercise`, `_hw`, `_homework`, or nothing) is ignored.
+   - ✅ All accepted:
+     - `Faizan_Khan_week_03_exercise.ipynb`
+     - `Faizan-Khan-Week-03-exercise.ipynb`
+     - `faizan_khan_week3_hw.ipynb`
      - `student_12345678_week_03_exercise.ipynb`
+     - `Faizan_Khan_Week01.ipynb`
+   - ❌ Rejected:
+     - `fk_week_03_exercise.ipynb` — bare initials
+     - `faizankhan_week_03_exercise.ipynb` — run-together name, no separator
+     - `Faizan_Khan_exercise.ipynb` — no week number
 3. **Complete all questions** in your copy of the exercise notebook.
-4. **Move it** to the `exercise/` folder for the week you're working on.
-5. **Push your completed notebook to your fork.**
+   - A copy that still matches the blank template gets flagged, not merged.
+4. **Move it into the `exercise/` folder** for that week — e.g. `Week-01-Pandas/exercise/`.
+   - Leaving it at the week's root (next to `Lecture.ipynb`) will be rejected.
+   - The week number in your filename must match the week folder it's in.
+5. **Your PR must contain your notebook and nothing else.** This is the single most common reason a PR gets flagged.
+   - Some exercises **write a data file when you run them** (Week 1 writes `data/joined.csv`). That file is not homework — don't commit it.
+   - Don't commit the template, `Lecture.ipynb`, or anything under `data/`.
+   - If you renamed or moved your file, delete the older copy — one notebook per PR.
+   - Already committed something by accident? `git rm --cached "path/to/file"`, then commit and push. The file stays on your computer, it just leaves the PR.
+6. **One week per PR.** Don't bundle Week 1 and Week 2 into the same pull request.
+7. **Push your completed notebook to your fork.**
    ```bash
    # NEVER DO:
    git add .
