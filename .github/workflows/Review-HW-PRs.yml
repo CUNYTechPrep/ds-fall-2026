@@ -224,6 +224,13 @@ jobs:
               if (reason === 'template') {
                 return `\`${filename}\` is the template itself, don't edit it, make your own copy inside that week's \`exercise/\` folder instead`;
               }
+              if (reason === 'repo-config') {
+                return (
+                  `\`${filename}\` isn't part of your submission -- repo config like \`.gitignore\` isn't something to add in a homework PR. ` +
+                  `Remove it (\`git rm "${filename}"\`, then commit and push). If you're trying to keep a generated file like \`joined.csv\` out ` +
+                  `of this PR, \`git rm --cached <file>\` on its own is enough -- no \`.gitignore\` needed for a one-off submission`
+                );
+              }
               // Anything that isn't a notebook was never a submission attempt,
               // so say that plainly instead of talking about naming. Sits ahead
               // of the leftover-copy branch on purpose: a PR carrying a good
@@ -387,6 +394,13 @@ jobs:
             function classifyFile(filename) {
               const basename = filename.split('/').pop();
               if (isTemplateName(basename)) return 'template';
+              // .gitignore is repo config, not a submission -- flag it
+              // explicitly so explainInvalidFile() doesn't call it leftover
+              // notebook output (wrong) or tell a student to git rm --cached
+              // their own .gitignore (nonsensical, and an unresolvable loop
+              // for anyone who added one after being told to stop committing
+              // a generated file).
+              if (basename === '.gitignore') return 'repo-config';
 
               // Name shape is checked BEFORE location on purpose, same reasoning
               // as the summer bot: "wrong-location" should only ever fire for a
