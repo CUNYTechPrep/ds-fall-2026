@@ -149,6 +149,50 @@ It passed headless Streamlit `AppTest` runs (default, empty genres, one genre, n
 
 ---
 
-## Moment 4: Open questions to log when they come up
+## Moment 4: Bonus visuals (my prompt, verbatim, and it was cut off)
+
+````text
+One design update: add bonus visuals. Keep the zine concept and voice.
+
+DO NOT change the four required charts, their forms, or their logic. They stay exactly as they are.
+
+Look at the full dataset, including age, gender, occupation, decade and rating_year, and propose 3 NEW visuals about movies and ratings that are NOT any of the four required questions. Before building, show me a list of 6 candidate ideas. For each give the question it answers, the chart form, and why it fits the data, then pick your 3 favorites. Choose forms that differ from each other and from the bar, dot plot, line and rank board already in the app. Examples to consider, not mandatory: genre x decade heatmap, rating-distribution small multiples for polarizing movies, popularity-vs-quality scatter with aggregation, audience-taste comparison by occupation or age, genre co-occurrence matrix.
+
+Wait for my pick, then build them in a separate section after the four required charts, clearly labeled as bonus, so the required four stay easy to find.
+
+RULES
+- Every new visual uses the same custom Plotly template and palette, has a data-driven headline plus a "what to notice" line, and handles empty selections. Respond to the sidebar filters where that makes sense.
+- Honesty over flash: no pie charts, no truncated axes without a note, no tiny samples without a minimum-count guard.
+- Keep load time reasonable for Streamlit Cloud: cache computed tables with @st.cache_data, and use expanders or
+````
+
+The message ended mid-sentence at "use expanders or". The AI said so, guessed "lazy or collapsible sections", and asked.
+
+**What the AI produced the first time:** it profiled the demographic columns before proposing anything. Findings that shaped the list: 74% of ratings are from men; `rating_year` only spans 1997–98 (so "over time by rating date" is thin); `decade` is just the release year bucketed; occupations range from 196 students to 7 doctors. Six candidates:
+
+1. genre × decade heatmap
+2. divisive movies (stacked rating strips)
+3. popularity vs quality (binned density)
+4. toughest critics by occupation (jitter strip)
+5. genre co-occurrence (sized-square matrix)
+6. age × release-decade ribbon
+
+It also rejected a gender taste-gap dumbbell (gaps of only -0.23 to +0.17 stars, 74% male raters, too close to chart 2). Favourites: #2, #3, #4.
+
+**What I chose:** "do your fav 3". I did not answer the cut-off question, so the AI used cached tables and an `st.expander` per chart for the numbers.
+
+**First build, then what the self-review caught (all three were the AI's own mistakes):**
+
+1. **Wrong headline on the divisive chart.** The first version compared "1★ or 5★ share" for the divisive film against the quiet film. The quiet film (*Vertigo*) scored higher (37% vs 33%) because its extremes are all fives. The metric did not measure disagreement. Fix: compare votes at 1–2★ with votes at 4–5★ and describe the quiet film as "91% one-sided".
+2. **Confusing 3★ labels.** The 3★ block is split across the midline and each half carried the *full* share, so it read "23% | 23%". Fix: label it once at the midline. The legend was also in stacking order (3, 2, 4, 1, 5); fixed with `legendrank`.
+3. **"Healthcares are the toughest room"** was ungrammatical, and the ranking rests on only 16 viewers. Fix: "Healthcare viewers", plus a sentence saying the toughest crew is small and the ranking is a hint.
+
+**Checked and kept:** the required four charts are byte-for-byte unchanged (the diff shows only two edited lines, in the data loader, which now also reads `user_id` and `occupation`). Spot-checked in pandas: *Natural Born Killers* is 36.7% 1–2★ and 39.8% 4–5★ over 128 votes; healthcare has 16 qualifying viewers with median 3.32.
+
+**Judgement calls to flag:** the "divisive" ranking is by standard deviation, which is one defensible definition and not the only one. The critics chart's per-viewer guard (20 ratings) and per-occupation guard (15 viewers) are my choices.
+
+---
+
+## Moment 5: Open questions to log when they come up
 
 - Streamlit may look for `.streamlit/config.toml` relative to the **repo root**, and this app lives in a subfolder (I could not verify this locally). The CSS block sets the page colours itself so the app should look right either way. Confirm after deploying.
