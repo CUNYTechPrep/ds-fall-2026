@@ -1,0 +1,13 @@
+# Base theme; the injected CSS block in the app does the rest (fonts, sidebar, panels).
+[theme]
+base = "light"
+primaryColor = "#D61F69"
+backgroundColor = "#E7E4EF"
+secondaryBackgroundColor = "#F4F2F8"
+textColor = "#1A1330"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
