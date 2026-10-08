@@ -649,7 +649,7 @@ with st.container(key="panel_bonus_pop"):
         empty(f"Not enough films for a crowd. Fewer than 30 have {BONUS_MIN_POP}+ votes with these knobs. "
               "Widen the years or add genres.")
     else:
-        rho = q["n"].corr(q["mean"], method="spearman")
+        rho = q["n"].rank().corr(q["mean"].rank())  
         lo_cut, hi_cut = q["n"].quantile(1 / 3), q["n"].quantile(2 / 3)
         med_lo = q.loc[q["n"] <= lo_cut, "mean"].median()
         med_hi = q.loc[q["n"] >= hi_cut, "mean"].median()
