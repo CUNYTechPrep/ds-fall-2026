@@ -35,6 +35,10 @@ SURFACE = dict(paper_bgcolor=PANEL, plot_bgcolor=PANEL,
 # Data-honesty knobs (all explained in the page copy)
 MIN_GENRE_RATINGS = 500   # chart 2: genres with fewer ratings sit out
 MIN_YEAR_RATINGS = 30     # chart 3: release years with fewer ratings are hidden
+BONUS_MIN_SPLIT = 100     # bonus: a film needs this many votes to count as "divisive"
+BONUS_MIN_POP = 20        # bonus: films under this many votes sit out of the popularity scatter
+BONUS_MIN_USER = 20       # bonus: a viewer needs this many ratings for their own average to count
+BONUS_MIN_CREW = 15       # bonus: an occupation needs this many qualifying viewers
 DATA_PATH = Path(__file__).parent / "data" / "movie_ratings.csv"
 
 st.set_page_config(
@@ -120,6 +124,18 @@ p, li, label, span, div {{ font-family:'{FONT_BODY}', monospace; }}
 .empty {{ border:2px dashed var(--pink); padding:1.2rem 1.4rem; color:var(--pink);
   font-weight:700; background:var(--panel); }}
 
+/* bonus section */
+.st-key-panel_bonus_split  {{ box-shadow:9px 9px 0 var(--pink); }}
+.st-key-panel_bonus_pop    {{ box-shadow:9px 9px 0 var(--violet); }}
+.st-key-panel_bonus_critic {{ box-shadow:9px 9px 0 var(--sun); }}
+.bonus-banner {{ border-top:3px solid var(--ink); border-bottom:3px solid var(--ink); padding:1.1rem 0 1rem;
+  margin:1rem 0 2.4rem; }}
+.bonus-banner .kicker {{ background:var(--violet); }}
+.bonus-banner h2 {{ font-family:'{FONT_DISPLAY}', sans-serif !important; font-weight:400; color:var(--pink);
+  font-size:clamp(1.6rem, 4vw, 2.6rem); margin:.6rem 0 .3rem; padding:0; text-shadow:3px 3px 0 var(--sun); }}
+.bonus-banner h2 * {{ font-family:'{FONT_DISPLAY}', sans-serif !important; }}
+.bonus-banner p {{ margin:0; max-width:46rem; }}
+
 /* taped-in oddity */
 .oddity {{ background:var(--sun); border:2px solid var(--ink); padding:.9rem 1.3rem;
   margin:0 0 2.2rem; transform:rotate(-.6deg); box-shadow:5px 5px 0 var(--violet); max-width:46rem; }}
@@ -151,11 +167,11 @@ def clean_title(raw):
 
 @st.cache_data(show_spinner="Warming up the Risograph drum…")
 def load_data():
-    df = pd.read_csv(DATA_PATH, usecols=["movie_id", "rating", "title", "year", "genres"])
+    df = pd.read_csv(DATA_PATH, usecols=["user_id", "occupation", "movie_id", "rating", "title", "year", "genres"])
     # 5 movies (30 ratings) have no release year; every chart is year-aware, so they sit out.
     df = df.dropna(subset=["year"]).copy()
     df["year"] = df["year"].astype(int)
-    ratings = df[["movie_id", "rating", "year", "genres"]].copy()
+    ratings = df[["user_id", "occupation", "movie_id", "rating", "year", "genres"]].copy()
     ratings["genre"] = ratings["genres"].str.split("|")
     ratings = ratings.drop(columns="genres")
 
@@ -535,6 +551,229 @@ with st.container(key="panel_podium"):
             yaxis=dict(range=[y_bottom, 0.3], visible=False, showgrid=False, fixedrange=True),
         )
         st.plotly_chart(fig, width="stretch", config=PLOT_CFG, theme=None)
+
+# ==========================================================================
+# BONUS SHEETS: three extra visuals, outside the four required questions.
+# They respond to the genre + release-year filters through one cached table builder.
+# ==========================================================================
+@st.cache_data(show_spinner=False)
+def bonus_tables(genres, lo_year, hi_year):
+    """Per-movie stats, per-movie star shares, and per-viewer stats for the current filters."""
+    keep = set(genres)
+    mok = movies[movies["year"].between(lo_year, hi_year) & movies["genre"].map(lambda g: bool(keep & set(g)))]
+    r = ratings[ratings["movie_id"].isin(mok["movie_id"])]
+    mstats = (r.groupby("movie_id")["rating"].agg(n="size", mean="mean", std="std").reset_index()
+              .merge(mok[["movie_id", "label", "year"]], on="movie_id"))
+    shares = pd.crosstab(r["movie_id"], r["rating"], normalize="index").reindex(columns=[1, 2, 3, 4, 5], fill_value=0)
+    ustats = (r.groupby("user_id").agg(n=("rating", "size"), mean=("rating", "mean"), occupation=("occupation", "first"))
+              .reset_index())
+    return mstats, shares, ustats
+
+
+st.markdown(
+    """<div class="bonus-banner"><span class="kicker">bonus sheets, not part of the required four</span>
+<h2>Stapled in at the back</h2>
+<p>Three extra pages the questions didn't ask for. Same inks, same rules, and they obey the same genre and year knobs.</p></div>""",
+    unsafe_allow_html=True,
+)
+mstats, shares, ustats = bonus_tables(tuple(sorted(picked)), y0, y1)
+
+# --------------------------------------------------------------------------
+# BONUS A: which films split the room? Diverging stacked strips centred on 3 stars.
+# "Divisive" = highest standard deviation of ratings among films with enough votes.
+# --------------------------------------------------------------------------
+STAR_COLORS = {1: PINK, 2: "#F08CB4", 3: "#BDB7CF", 4: "#8E7BC4", 5: VIOLET}
+STAR_TEXT = {1: "#fff", 2: INK, 3: INK, 4: "#fff", 5: "#fff"}
+with st.container(key="panel_bonus_split"):
+    q = mstats[mstats["n"] >= BONUS_MIN_SPLIT]
+    if len(q) < 3:
+        empty(f"Too quiet in here. Fewer than 3 films on this sheet have {BONUS_MIN_SPLIT}+ votes. "
+              "Widen the years or add genres.")
+    else:
+        calm = q.nsmallest(1, "std").iloc[0]
+        split = q[q["movie_id"] != calm["movie_id"]].nlargest(min(6, len(q) - 1), "std")
+        rows = pd.concat([split, q[q["movie_id"] == calm["movie_id"]]])
+        sh_all = shares.loc[rows["movie_id"]]
+        low_share, high_share = (sh_all[1] + sh_all[2]).values, (sh_all[4] + sh_all[5]).values
+        top = split.iloc[0]
+        panel_header(
+            "Bonus: the split",
+            html.escape(f"{top['label']} splits the room: {low_share[0]:.0%} of votes are 1–2 ★ and {high_share[0]:.0%} are 4–5 ★, "
+                        f"while {calm['label']} is {max(low_share[-1], high_share[-1]):.0%} one-sided"),
+            f"averages hide fights. These {len(split)} films average {split['mean'].min():.2f}–{split['mean'].max():.2f} ★, "
+            f"which looks ordinary, but the pink and violet edges are the story. Ranked by the spread of votes "
+            f"(standard deviation); only films with {BONUS_MIN_SPLIT}+ votes qualify. The bottom row is the quietest room, for contrast.",
+        )
+        labels = [f"{r.label} ({int(r.year)}) · {int(r.n)} votes" for r in rows.itertuples()]
+        sh = shares.loc[rows["movie_id"]].reset_index(drop=True)
+        fig = go.Figure()
+        # trace order matters: relative bars stack outward from the 3-star midline
+        for star, side in ((3, -1), (3, 1), (2, -1), (4, 1), (1, -1), (5, 1)):
+            val = sh[star] * (0.5 if star == 3 else 1) * side
+            fig.add_trace(go.Bar(
+                y=labels, x=val, orientation="h", name=f"{star} ★", legendgroup=str(star), legendrank=star,
+                showlegend=not (star == 3 and side == 1),
+                marker=dict(color=STAR_COLORS[star], line=dict(color=PANEL, width=1.5)),
+                text=[f"{v:.0%}" if (v >= 0.07 and star != 3) else "" for v in sh[star]],
+                textposition="inside", insidetextanchor="middle", textfont=dict(color=STAR_TEXT[star], size=12),
+                customdata=sh[star], hovertemplate="<b>%{y}</b><br>" + f"{star} ★: " + "%{customdata:.1%}<extra></extra>",
+            ))
+        reach = max((sh[1] + sh[2] + sh[3] / 2).max(), (sh[5] + sh[4] + sh[3] / 2).max())
+        lim = np.ceil(reach * 10) / 10 + 0.02
+        ticks = [t for t in np.arange(-0.8, 0.81, 0.2) if abs(t) <= lim]
+        for lab, v in zip(labels, sh[3]):
+            fig.add_annotation(x=0, y=lab, text=f"{v:.0%}", showarrow=False, font=dict(size=12, color=INK),
+                               bgcolor=STAR_COLORS[3], borderpad=1)
+        fig.add_hline(y=len(split) - 0.5, line=dict(color=INK, width=1.5, dash="dot"))
+        fig.update_layout(
+            template="riso", **SURFACE, barmode="relative", bargap=0.28, height=60 * len(rows) + 150,
+            xaxis=dict(range=[-lim, lim], tickvals=ticks, ticktext=[f"{abs(t):.0%}" for t in ticks],
+                       title="Share of votes, centred on 3 ★ (left: 1–2 ★, right: 4–5 ★)", zeroline=True,
+                       zerolinecolor=INK, zerolinewidth=2),
+            yaxis=dict(autorange="reversed", showgrid=False, ticks="", categoryorder="array", categoryarray=labels),
+            legend=dict(y=1.0, yanchor="bottom"), margin=dict(t=40),
+        )
+        st.plotly_chart(fig, width="stretch", config=PLOT_CFG, theme=None)
+        with st.expander("Lift the flap: the numbers"):
+            st.dataframe(pd.DataFrame({"film": rows["label"].values, "votes": rows["n"].values,
+                                       "mean": rows["mean"].round(2).values, "spread (std)": rows["std"].round(2).values,
+                                       "share 1–2 ★": low_share.round(3), "share 4–5 ★": high_share.round(3)}), width="stretch", hide_index=True)
+
+# --------------------------------------------------------------------------
+# BONUS B: popularity vs quality. 2D binned density (not 900 overplotted dots) on a log vote axis.
+# --------------------------------------------------------------------------
+with st.container(key="panel_bonus_pop"):
+    q = mstats[mstats["n"] >= BONUS_MIN_POP].copy()
+    left_out = len(mstats) - len(q)
+    if len(q) < 30:
+        empty(f"Not enough films for a crowd. Fewer than 30 have {BONUS_MIN_POP}+ votes with these knobs. "
+              "Widen the years or add genres.")
+    else:
+        rho = q["n"].corr(q["mean"], method="spearman")
+        lo_cut, hi_cut = q["n"].quantile(1 / 3), q["n"].quantile(2 / 3)
+        med_lo = q.loc[q["n"] <= lo_cut, "mean"].median()
+        med_hi = q.loc[q["n"] >= hi_cut, "mean"].median()
+        if rho >= 0.15:
+            head = f"More votes, higher marks: the most-voted third of films averages {med_hi:.2f} ★ against {med_lo:.2f} ★ for the least-voted third"
+            rel = "popular films do score higher"
+        elif rho <= -0.15:
+            head = f"More votes, lower marks: the most-voted third averages {med_hi:.2f} ★ against {med_lo:.2f} ★ for the least-voted third"
+            rel = "popular films score lower"
+        else:
+            head = f"Popularity says little about quality: {med_hi:.2f} ★ for the most-voted third vs {med_lo:.2f} ★ for the least-voted"
+            rel = "the two barely move together"
+        panel_header(
+            "Bonus: the crowd test", html.escape(head),
+            f"darker cells hold more films, and the dashed line is the typical (median) film at each popularity level. "
+            f"Rank correlation ρ = {rho:.2f}: {rel}, but this can't say whether quality draws a crowd or a crowd inflates the score. "
+            f"Vote axis is logarithmic and the rating axis is zoomed; {left_out} films under {BONUS_MIN_POP} votes sit out.",
+        )
+        lx = np.log10(q["n"].values)
+        xb = np.linspace(lx.min(), lx.max() + 1e-9, 13)
+        y_lo, y_hi = np.floor(q["mean"].min() * 4) / 4, np.ceil(q["mean"].max() * 4) / 4
+        yb = np.arange(y_lo, y_hi + 0.25, 0.25)
+        H, _, _ = np.histogram2d(lx, q["mean"].values, bins=[xb, yb])
+        xc, yc = (xb[:-1] + xb[1:]) / 2, (yb[:-1] + yb[1:]) / 2
+        votes_lo, votes_hi = np.round(10 ** xb[:-1]), np.round(10 ** xb[1:])
+        cd = np.dstack([np.tile(votes_lo, (len(yc), 1)), np.tile(votes_hi, (len(yc), 1))])
+        fig = go.Figure(go.Heatmap(
+            x=xc, y=yc, z=np.where(H.T == 0, np.nan, H.T), customdata=cd, xgap=2, ygap=2,
+            colorscale=[[0, "#E3DCF2"], [1, VIOLET]], hoverongaps=False,
+            colorbar=dict(title=dict(text="films", side="top"), thickness=12, len=0.7, tickfont=dict(size=11)),
+            hovertemplate="~%{customdata[0]:.0f}–%{customdata[1]:.0f} votes<br>mean ≈ %{y:.2f} ★<br>%{z:.0f} films<extra></extra>",
+        ))
+        bins = np.digitize(lx, xb[1:-1])
+        med = [(xc[b], np.median(q["mean"].values[bins == b])) for b in range(len(xc)) if (bins == b).sum() >= 8]
+        fig.add_trace(go.Scatter(x=[m[0] for m in med], y=[m[1] for m in med], mode="lines+markers",
+                                 name="Median film", line=dict(color=PINK, width=2.5, dash="dash"),
+                                 marker=dict(color=PINK, size=7, line=dict(color=PANEL, width=1.5)),
+                                 hovertemplate="median ≈ %{y:.2f} ★<extra></extra>"))
+        # three labelled films: the most-voted, and the best/worst among well-voted films
+        big = q[q["n"] >= 100]
+        picks = [("most voted", q.loc[q["n"].idxmax()], 40, -40)]
+        if len(big) >= 2:
+            picks += [("best", big.loc[big["mean"].idxmax()], -50, -45), ("worst", big.loc[big["mean"].idxmin()], 50, 35)]
+        for tag, r, ax, ay in picks:
+            fig.add_trace(go.Scatter(x=[np.log10(r["n"])], y=[r["mean"]], mode="markers", showlegend=False,
+                                     marker=dict(color=SUNFLOWER, size=11, line=dict(color=INK, width=1.5)),
+                                     hovertemplate=f"<b>{html.escape(r['label'])}</b><br>{int(r['n']):,} votes · {r['mean']:.2f} ★<extra></extra>"))
+            fig.add_annotation(x=np.log10(r["n"]), y=r["mean"], ax=ax, ay=ay, arrowhead=0, arrowcolor=INK, arrowwidth=1.5,
+                               text=f"{tag}: {html.escape(r['label'][:26])}", font=dict(size=11, color=INK),
+                               bgcolor=SUNFLOWER, bordercolor=INK, borderwidth=1.5, borderpad=3)
+        tick_votes = [v for v in (20, 30, 50, 100, 200, 300, 500) if q["n"].min() * 0.9 <= v <= q["n"].max() * 1.1]
+        fig.update_layout(
+            template="riso", **SURFACE, height=500,
+            xaxis=dict(tickvals=np.log10(tick_votes), ticktext=[str(v) for v in tick_votes], showgrid=False,
+                       title="Votes the film received (log scale)"),
+            yaxis=dict(title="Mean rating (★), axis zoomed", range=[y_lo - 0.1, y_hi + 0.1]),
+            legend=dict(y=1.0, yanchor="bottom"), margin=dict(t=40),
+        )
+        st.plotly_chart(fig, width="stretch", config=PLOT_CFG, theme=None)
+        with st.expander("Lift the flap: the numbers"):
+            st.dataframe(q.sort_values("n", ascending=False)[["label", "year", "n", "mean"]]
+                         .rename(columns={"label": "film", "n": "votes", "mean": "mean_rating"}).round(2),
+                         width="stretch", hide_index=True)
+
+# --------------------------------------------------------------------------
+# BONUS C: toughest critics. Unit = the VIEWER (their own average), so heavy raters
+# don't dominate; grouped by occupation, with a median tick.
+# --------------------------------------------------------------------------
+with st.container(key="panel_bonus_critic"):
+    u = ustats[ustats["n"] >= BONUS_MIN_USER]
+    sizes = u.groupby("occupation").size()
+    crews = sizes[sizes >= BONUS_MIN_CREW].index
+    sat_out = sorted(sizes[sizes < BONUS_MIN_CREW].index)
+    u = u[u["occupation"].isin(crews)]
+    if len(crews) < 3:
+        empty(f"Not enough critics. Fewer than 3 occupations have {BONUS_MIN_CREW}+ viewers with "
+              f"{BONUS_MIN_USER}+ ratings under these knobs. Widen the years or add genres.")
+    else:
+        med_by = u.groupby("occupation")["mean"].median().sort_values()
+        tough, kind = med_by.index[0], med_by.index[-1]
+        gap = med_by.iloc[-1] - med_by.iloc[0]
+        iqr = (u.groupby("occupation")["mean"].quantile(0.75) - u.groupby("occupation")["mean"].quantile(0.25)).median()
+        sat_txt = f" Sitting out for lack of viewers: {', '.join(sat_out)}." if sat_out else ""
+        panel_header(
+            "Bonus: the critics' table",
+            f"{tough.title()} viewers are the toughest room (median {med_by.iloc[0]:.2f} ★); "
+            f"{kind.title()} viewers are the kindest ({med_by.iloc[-1]:.2f} ★)",
+            f"each dot is one viewer's own average rating. Occupations' medians differ by only {gap:.2f} ★, while the middle half "
+            f"of viewers <i>within</i> one occupation spans about {iqr:.2f} ★, so personal taste outweighs the job title. "
+            f"The toughest crew has only {int(sizes[tough])} viewers, so read the ranking as a hint, not a verdict. "
+            f"Needs {BONUS_MIN_USER}+ ratings per viewer and {BONUS_MIN_CREW}+ viewers per occupation; the axis is zoomed.{sat_txt}",
+        )
+        order = list(med_by.index)
+        pos = {o: i for i, o in enumerate(order)}
+        rng = np.random.default_rng(7)  # fixed seed so the jitter doesn't dance on every rerun
+        yj = u["occupation"].map(pos) + rng.uniform(-0.27, 0.27, len(u))
+        names = [f"{o.title()} ({int(sizes[o])})" for o in order]
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=u["mean"], y=yj, mode="markers", name="One viewer", customdata=np.c_[u["occupation"].str.title(), u["n"]],
+            marker=dict(color=VIOLET, size=8, opacity=0.5, line=dict(color=PANEL, width=0.5)),
+            hovertemplate="<b>%{customdata[0]}</b><br>avg %{x:.2f} ★ over %{customdata[1]} ratings<extra></extra>",
+        ))
+        fig.add_trace(go.Scatter(
+            x=med_by.values, y=list(range(len(order))), mode="markers", name="Occupation median",
+            marker=dict(symbol="line-ns", size=26, color=PINK, line=dict(color=PINK, width=4)),
+            hovertemplate="median %{x:.2f} ★<extra></extra>",
+        ))
+        overall_med = u["mean"].median()
+        fig.add_vline(x=overall_med, line=dict(color=INK, width=1.5, dash="dash"))
+        fig.add_annotation(x=overall_med, y=1.0, yref="paper", yanchor="bottom", showarrow=False,
+                           text=f"all viewers: {overall_med:.2f}", font=dict(size=12), bgcolor=SUNFLOWER,
+                           bordercolor=INK, borderwidth=1.5, borderpad=3)
+        fig.update_layout(
+            template="riso", **SURFACE, height=max(360, 34 * len(order) + 130),
+            xaxis=dict(title="A viewer's own average rating (★), axis zoomed",
+                       range=[u["mean"].min() - 0.1, u["mean"].max() + 0.1]),
+            yaxis=dict(tickvals=list(range(len(order))), ticktext=names, autorange="reversed", showgrid=True),
+            legend=dict(y=-0.2), margin=dict(t=40),
+        )
+        st.plotly_chart(fig, width="stretch", config=PLOT_CFG, theme=None)
+        with st.expander("Lift the flap: the numbers"):
+            tbl = u.groupby("occupation")["mean"].agg(viewers="size", median="median", lowest="min", highest="max").loc[order]
+            st.dataframe(tbl.round(2), width="stretch")
 
 # --------------------------------------------------------------------------
 # The numbers behind the pictures (a table view for every chart)
